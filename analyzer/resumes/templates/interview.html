@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Technical Interview</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            color: white;
+            background-image: url('{% static "img/img.png" %}');
+            background-size: cover;
+            background-position: center;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            flex-direction: column;
+        }
+
+        .container {
+            background: rgba(0, 0, 0, 0.85);
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            width: 90%;
+            max-width: 500px;
+        }
+
+        h1 {
+            color: #b88e64;
+            margin-bottom: 10px;
+        }
+
+        form label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+        }
+
+        form input, form button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0 15px;
+            border: none;
+            border-radius: 5px;
+        }
+
+        form input {
+            background: rgba(255, 255, 255, 0.9);
+            font-size: 16px;
+        }
+
+        form button {
+            background-color: #b88e64;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        form button:hover {
+            background-color: #78ad48;
+        }
+
+        #interviewOutput {
+            margin-top: 20px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .score-message {
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .high-score {
+            color: #4CAF50;
+        }
+
+        .low-score {
+            color: #ff4d4d;
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Technical Interview</h1>
+        <form id="interviewForm">
+            {% csrf_token %}
+            <label for="candidate_name">Candidate Name:</label>
+            <input type="text" id="candidate_name" name="candidate_name" required>
+
+            <label for="skills">Enter Skills (comma-separated):</label>
+            <input type="text" id="skills" name="skills" required>
+
+            <button type="submit">Start Interview</button>
+        </form>
+
+        <div id="interviewOutput" class="hidden"></div>
+    </div>
+
+    <script>
+        function getCsrfToken() {
+            return document.querySelector('[name=csrfmiddlewaretoken]').value;
+        }
+
+        let totalScore = 0;
+        let currentQuestionIndex = 0;
+        let questions = [];
+
+        $('#interviewForm').submit(function(event) {
+            event.preventDefault();
+            const candidateData = $(this).serialize();
+            const csrfToken = getCsrfToken();
+
+            $.ajax({
+                url: '{% url "interview" %}',
+                type: 'POST',
+                data: candidateData,
+                headers: { 'X-CSRFToken': csrfToken },
+                beforeSend: function() {
+                    $('#interviewOutput').html("<p>Loading questions...</p>").removeClass("hidden");
+                },
+                success: function(response) {
+                    questions = response.questions;
+                    currentQuestionIndex = 0;
+                    totalScore = 0;
+                    showQuestion();
+                },
+                error: function(xhr, status, error) {
+                    console.error('Error starting interview:', error);
+                    alert('Failed to start the interview. Please try again.');
+                }
+            });
+        });
+
+        function showQuestion() {
+            if (currentQuestionIndex < questions.length) {
+                $('#interviewOutput').html(`
+                    <p><strong>Question ${currentQuestionIndex + 1} of ${questions.length}</strong></p>
+                    <p>${questions[currentQuestionIndex].question}</p>
+                    <input type="text" id="answer" placeholder="Type your answer here">
+                    <button id="submitAnswer" disabled>Submit Answer</button>
+                `).removeClass("hidden");
+
+                $('#answer').on("input", function() {
+                    $('#submitAnswer').prop("disabled", !$(this).val().trim());
+                });
+
+                $('#submitAnswer').click(function() {
+                    const answer = $('#answer').val().trim();
+                    if (answer) {
+                        submitAnswer(answer);
+                    }
+                });
+            }
+        }
+
+        function submitAnswer(answer) {
+            const csrfToken = getCsrfToken();
+
+            $.ajax({
+                url: '{% url "evaluate_answer" %}',
+                type: 'POST',
+                data: {
+                    'answer': answer,
+                    'question': questions[currentQuestionIndex].question
+                },
+                headers: { 'X-CSRFToken': csrfToken },
+                beforeSend: function() {
+                    $('#submitAnswer').prop("disabled", true).text("Evaluating...");
+                },
+                success: function(response) {
+                    totalScore += response.score;
+
+                    $('#interviewOutput').html(`
+                        <p>Score for this answer: ${response.score} / 5</p>
+                        <button id="nextQuestion">Next Question</button>
+                    `);
+
+                    $('#nextQuestion').click(function() {
+                        currentQuestionIndex++;
+                        if (currentQuestionIndex < questions.length) {
+                            showQuestion();
+                        } else {
+                            showFinalResults();
+                        }
+                    });
+                },
+                error: function(xhr, status, error) {
+                    console.error('Error evaluating the answer:', error);
+                    alert('Failed to evaluate the answer. Please try again.');
+                }
+            });
+        }
+
+        function showFinalResults() {
+            let performanceMessage = "";
+
+            if (totalScore >= (questions.length * 4)) {
+                performanceMessage = `<p class="score-message high-score">Excellent performance! 🚀</p>`;
+            } else if (totalScore >= (questions.length * 2.5)) {
+                performanceMessage = `<p class="score-message">Good job! 👍</p>`;
+            } else {
+                performanceMessage = `<p class="score-message low-score">Needs improvement. Keep practicing! 💪</p>`;
+            }
+
+            $('#interviewOutput').html(`
+                <p>The interview is complete!</p>
+                <p>Your total score: ${totalScore} out of ${questions.length * 5}</p>
+                ${performanceMessage}
+                <button onclick="location.reload()">Restart Interview</button>
+            `);
+        }
+    </script>
+</body>
+</html>
